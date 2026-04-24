@@ -29,6 +29,7 @@ st.set_page_config(
 )
 
 CSV_PATH = Path("data/social_media_vs_productivity.csv")
+DBCA_PATH = Path("data/datos_dbca_balanceado.csv")
 
 ALPHA = 0.05
 
@@ -691,6 +692,54 @@ def auxiliary_estimators(df, sample):
 def create_balanced_dbca(df):
     needed = ["actual_productivity_score", "social_media_level", "job_type"]
 
+    if DBCA_PATH.exists():
+        dbca = pd.read_csv(DBCA_PATH)
+        dbca.columns = [c.strip() for c in dbca.columns]
+
+        missing_cols = [col for col in needed if col not in dbca.columns]
+        if missing_cols:
+            st.error(
+                "El archivo datos_dbca_balanceado.csv existe, pero le faltan columnas: "
+                + ", ".join(missing_cols)
+            )
+            return pd.DataFrame(columns=needed), pd.DataFrame(), 0
+
+        dbca = dbca[needed].copy()
+
+        dbca["actual_productivity_score"] = pd.to_numeric(
+            dbca["actual_productivity_score"],
+            errors="coerce"
+        )
+
+        dbca["social_media_level"] = (
+            dbca["social_media_level"]
+            .astype(str)
+            .str.strip()
+        )
+
+        dbca["job_type"] = (
+            dbca["job_type"]
+            .astype(str)
+            .str.strip()
+        )
+
+        dbca = dbca.dropna(subset=needed)
+
+        dbca["social_media_level"] = pd.Categorical(
+            dbca["social_media_level"],
+            categories=["Bajo", "Medio", "Alto"],
+            ordered=True
+        )
+
+        balance_table = pd.crosstab(
+            dbca["social_media_level"],
+            dbca["job_type"]
+        )
+
+        n_cell = int(balance_table.min().min())
+
+        return dbca, balance_table, n_cell
+
     missing_cols = [col for col in needed if col not in df.columns]
     if missing_cols:
         st.error(
@@ -720,20 +769,17 @@ def create_balanced_dbca(df):
 
     base = base.dropna(subset=["actual_productivity_score"])
 
-    # Conserva únicamente los tres tratamientos válidos.
     base = base[
         base["social_media_level"].isin(["Bajo", "Medio", "Alto"])
     ].copy()
 
-    # Elimina etiquetas vacías que pueden aparecer distinto en Streamlit Cloud.
     base = base[
-        ~base["job_type"].isin(["nan", "None", "", "NaN", "<NA>"])
+        ~base["job_type"].isin(["nan", "None", "", "NaN"])
     ].copy()
 
     if base.empty:
         st.error(
-            "No hay registros válidos para construir el DBCA. "
-            "Revisa que existan datos completos en productividad real, nivel de redes y tipo de trabajo."
+            "No hay registros válidos para construir el DBCA."
         )
         return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
@@ -744,15 +790,6 @@ def create_balanced_dbca(df):
         .reset_index(name="n")
     )
 
-    conteos = conteos[conteos["n"] > 0].copy()
-
-    if conteos.empty:
-        st.error(
-            "No hay combinaciones observadas entre nivel de redes y tipo de trabajo para construir el DBCA."
-        )
-        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
-
-    # Se usan solo bloques que tengan observaciones en los tres tratamientos.
     tabla_completa = conteos.pivot_table(
         index="job_type",
         columns="social_media_level",
@@ -773,8 +810,7 @@ def create_balanced_dbca(df):
 
     if len(bloques_validos) == 0:
         st.error(
-            "No existe ningún tipo de trabajo con observaciones en los tres niveles "
-            "de redes sociales. Por eso no se puede formar un DBCA completo."
+            "No existe ningún tipo de trabajo con observaciones en los tres niveles de redes sociales."
         )
 
         balance_debug = pd.crosstab(
@@ -793,12 +829,6 @@ def create_balanced_dbca(df):
 
     n_cell = int(tabla_balance_previa.min().min())
 
-    if n_cell <= 0:
-        st.error(
-            "No se pudo calcular un número positivo de réplicas por celda para el DBCA."
-        )
-        return pd.DataFrame(columns=needed), tabla_balance_previa, 0
-
     partes = []
 
     for bloque in bloques_validos:
@@ -808,18 +838,17 @@ def create_balanced_dbca(df):
                 (base["social_media_level"] == tratamiento)
             ].copy()
 
-            if len(celda) >= n_cell:
-                partes.append(
-                    celda.sample(n=n_cell, random_state=123)
-                )
-
-    if len(partes) == 0:
-        st.error(
-            "No se pudo construir correctamente la base balanceada del DBCA."
-        )
-        return pd.DataFrame(columns=needed), tabla_balance_previa, 0
+            partes.append(
+                celda.sample(n=n_cell, random_state=123)
+            )
 
     balanced = pd.concat(partes, ignore_index=True)
+
+    balanced["social_media_level"] = pd.Categorical(
+        balanced["social_media_level"],
+        categories=["Bajo", "Medio", "Alto"],
+        ordered=True
+    )
 
     balance_table = pd.crosstab(
         balanced["social_media_level"],
@@ -827,7 +856,6 @@ def create_balanced_dbca(df):
     )
 
     return balanced, balance_table, n_cell
-
 
 def fit_dbca_anova(dbca):
     anova_cols = ["Fuente", "sum_sq", "df", "F", "PR(>F)"]
