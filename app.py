@@ -690,66 +690,127 @@ def create_balanced_dbca(df):
         )
         return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
-    base = df[needed].dropna().copy()
+    base = df[needed].copy()
 
-    if base.empty:
-        st.error(
-            "No hay registros completos para construir el DBCA. "
-            "Se necesitan datos completos en productividad real, nivel de redes y tipo de trabajo."
-        )
-        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
+    base["actual_productivity_score"] = pd.to_numeric(
+        base["actual_productivity_score"],
+        errors="coerce"
+    )
 
-    base["social_media_level"] = base["social_media_level"].astype(str)
-    base["job_type"] = base["job_type"].astype(str)
+    base["social_media_level"] = (
+        base["social_media_level"]
+        .astype(str)
+        .str.strip()
+    )
 
-    # Evita niveles vacíos o categorías no observadas
+    base["job_type"] = (
+        base["job_type"]
+        .astype(str)
+        .str.strip()
+    )
+
+    base = base.dropna(subset=["actual_productivity_score"])
+
+    # Conserva únicamente los tres tratamientos válidos.
     base = base[
         base["social_media_level"].isin(["Bajo", "Medio", "Alto"])
     ].copy()
 
+    # Elimina etiquetas vacías que pueden aparecer distinto en Streamlit Cloud.
+    base = base[
+        ~base["job_type"].isin(["nan", "None", "", "NaN", "<NA>"])
+    ].copy()
+
     if base.empty:
         st.error(
-            "Después de filtrar los niveles Bajo, Medio y Alto, no quedaron datos para el DBCA."
+            "No hay registros válidos para construir el DBCA. "
+            "Revisa que existan datos completos en productividad real, nivel de redes y tipo de trabajo."
         )
         return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
-    cell_counts = (
+    conteos = (
         base
         .groupby(["social_media_level", "job_type"], observed=True)
         .size()
         .reset_index(name="n")
     )
 
-    # Solo se usan celdas realmente observadas
-    cell_counts = cell_counts[cell_counts["n"] > 0].copy()
+    conteos = conteos[conteos["n"] > 0].copy()
 
-    if cell_counts.empty:
+    if conteos.empty:
         st.error(
-            "No hay combinaciones válidas entre nivel de redes y tipo de trabajo para construir el DBCA."
+            "No hay combinaciones observadas entre nivel de redes y tipo de trabajo para construir el DBCA."
         )
         return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
-    n_cell = int(cell_counts["n"].min())
-
-    if n_cell < 1:
-        st.error(
-            "El número mínimo de observaciones por celda es menor que 1. "
-            "No se puede construir una muestra balanceada para el DBCA."
-        )
-        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
-
-    balanced = (
-        base
-        .groupby(["social_media_level", "job_type"], observed=True, group_keys=False)
-        .apply(lambda x: x.sample(n=n_cell, random_state=123))
-        .reset_index(drop=True)
+    # Se usan solo bloques que tengan observaciones en los tres tratamientos.
+    tabla_completa = conteos.pivot_table(
+        index="job_type",
+        columns="social_media_level",
+        values="n",
+        fill_value=0,
+        observed=True
     )
 
-    if balanced.empty or "social_media_level" not in balanced.columns:
+    for nivel in ["Bajo", "Medio", "Alto"]:
+        if nivel not in tabla_completa.columns:
+            tabla_completa[nivel] = 0
+
+    bloques_validos = tabla_completa[
+        (tabla_completa["Bajo"] > 0) &
+        (tabla_completa["Medio"] > 0) &
+        (tabla_completa["Alto"] > 0)
+    ].index.tolist()
+
+    if len(bloques_validos) == 0:
+        st.error(
+            "No existe ningún tipo de trabajo con observaciones en los tres niveles "
+            "de redes sociales. Por eso no se puede formar un DBCA completo."
+        )
+
+        balance_debug = pd.crosstab(
+            base["social_media_level"],
+            base["job_type"]
+        )
+
+        return pd.DataFrame(columns=needed), balance_debug, 0
+
+    base = base[base["job_type"].isin(bloques_validos)].copy()
+
+    tabla_balance_previa = pd.crosstab(
+        base["social_media_level"],
+        base["job_type"]
+    )
+
+    n_cell = int(tabla_balance_previa.min().min())
+
+    if n_cell <= 0:
+        st.error(
+            "No se pudo calcular un número positivo de réplicas por celda para el DBCA."
+        )
+        return pd.DataFrame(columns=needed), tabla_balance_previa, 0
+
+    partes = []
+
+    for bloque in bloques_validos:
+        for tratamiento in ["Bajo", "Medio", "Alto"]:
+            celda = base[
+                (base["job_type"] == bloque) &
+                (base["social_media_level"] == tratamiento)
+            ].copy()
+
+            if len(celda) >= n_cell:
+                partes.append(
+                    celda.sample(n=n_cell, random_state=123)
+                )
+
+    if len(partes) == 0:
         st.error(
             "No se pudo construir correctamente la base balanceada del DBCA."
         )
-        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
+        return pd.DataFrame(columns=needed), tabla_balance_previa, 0
+
+    balanced = pd.concat(partes, ignore_index=True)
 
     balance_table = pd.crosstab(
         balanced["social_media_level"],
@@ -838,23 +899,33 @@ def get_anova_pvalue(anova, fuente):
     return float(value.iloc[0])
 
 def tukey_table(dbca):
-    if dbca.empty:
+    if dbca is None or dbca.empty:
         return pd.DataFrame()
 
-    tukey = pairwise_tukeyhsd(
-        endog=dbca["actual_productivity_score"],
-        groups=dbca["social_media_level"],
-        alpha=0.05
-    )
+    required = ["actual_productivity_score", "social_media_level"]
+    if any(col not in dbca.columns for col in required):
+        return pd.DataFrame()
 
-    return pd.DataFrame(
-        data=tukey.summary().data[1:],
-        columns=tukey.summary().data[0]
-    )
+    try:
+        tukey = pairwise_tukeyhsd(
+            endog=dbca["actual_productivity_score"],
+            groups=dbca["social_media_level"],
+            alpha=0.05
+        )
+
+        return pd.DataFrame(
+            data=tukey.summary().data[1:],
+            columns=tukey.summary().data[0]
+        )
+    except Exception:
+        return pd.DataFrame()
 
 
 def compute_power(anova, dbca):
-    if anova.empty:
+    if anova is None or anova.empty or dbca is None or dbca.empty:
+        return None
+
+    if "Fuente" not in anova.columns or "sum_sq" not in anova.columns:
         return None
 
     ss_treat = anova.loc[
@@ -1781,7 +1852,7 @@ with tabs[4]:
     with c1:
         metric_card("Tratamientos", "3", "Bajo, Medio y Alto")
     with c2:
-        metric_card("Bloques", f"{df['job_type'].nunique()}", "Tipos de trabajo")
+        metric_card("Bloques", f"{balance_table.shape[1]}", "Tipos de trabajo usados en el DBCA")
     with c3:
         metric_card("Réplicas por celda", f"{n_cell:,}", "Submuestra balanceada")
 
@@ -1814,17 +1885,26 @@ with tabs[4]:
         unsafe_allow_html=True
     )
 
-    fig = means_dbca_fig(dbca)
-    show_plot(fig, "dbca_medias_tratamiento")
+    if dbca.empty or n_cell == 0:
+        warn_box(
+            """
+            No se pudo construir el DBCA balanceado con los datos disponibles.
+            Revisa la tabla de balance para identificar si todos los bloques tienen observaciones
+            en los tres niveles de uso de redes sociales.
+            """
+        )
+    else:
+        fig = means_dbca_fig(dbca)
+        show_plot(fig, "dbca_medias_tratamiento")
 
-    interpretation_box(
-        "Interpretación de medias por tratamiento",
-        """
-        La gráfica muestra la productividad promedio en los niveles bajo, medio y alto de uso de redes.
-        Si el grupo alto presenta menor media, existe una tendencia descriptiva de menor productividad asociada
-        con mayor uso de redes. La significancia de esta diferencia se evalúa formalmente con el ANOVA.
-        """
-    )
+        interpretation_box(
+            "Interpretación de medias por tratamiento",
+            """
+            La gráfica muestra la productividad promedio en los niveles bajo, medio y alto de uso de redes.
+            Si el grupo alto presenta menor media, existe una tendencia descriptiva de menor productividad asociada
+            con mayor uso de redes. La significancia de esta diferencia se evalúa formalmente con el ANOVA.
+            """
+        )
 
 
 # =============================================================================
@@ -1837,7 +1917,10 @@ with tabs[5]:
     dbca, balance_table, n_cell = create_balanced_dbca(df)
     model, anova = fit_dbca_anova(dbca)
 
-    if model is None:
+    if dbca.empty or n_cell == 0:
+        st.error("No se puede realizar el ANOVA porque no se logró construir una base DBCA balanceada.")
+        st.dataframe(balance_table, use_container_width=True)
+    elif model is None:
         st.error("No hay datos suficientes para ajustar el modelo DBCA.")
     else:
         anova_display = anova.copy()
@@ -1873,7 +1956,7 @@ with tabs[5]:
                 )
 
         with c2:
-            if p_bloque < ALPHA:
+            if pd.notna(p_bloque) and p_bloque < ALPHA:
                 good_box(
                     f"""
                     <b>Bloque significativo.</b><br>
@@ -1899,17 +1982,24 @@ with tabs[5]:
             """
         )
 
-        fig = means_dbca_fig(dbca)
-        show_plot(fig, "dbca_means")
+        if dbca.empty or n_cell == 0:
+            warn_box(
+                """
+                No se muestra la gráfica de medias porque no se logró construir una base DBCA balanceada.
+                """
+            )
+        else:
+            fig = means_dbca_fig(dbca)
+            show_plot(fig, "anova_medias_tratamiento")
 
-        interpretation_box(
-            "Interpretación de la gráfica de medias",
-            """
-            Las barras representan la productividad media por nivel de redes sociales.
-            Si el ANOVA es significativo y las medias están separadas, se fortalece la evidencia de diferencias reales
-            entre niveles. Si el ANOVA no es significativo, la gráfica debe entenderse solo como descriptiva.
-            """
-        )
+            interpretation_box(
+                "Interpretación de la gráfica de medias",
+                """
+                Las barras representan la productividad media por nivel de redes sociales.
+                Si el ANOVA es significativo y las medias están separadas, se fortalece la evidencia de diferencias reales
+                entre niveles. Si el ANOVA no es significativo, la gráfica debe entenderse solo como descriptiva.
+                """
+            )
 
         st.subheader("Comparaciones múltiples — Tukey")
 
@@ -1946,7 +2036,10 @@ with tabs[6]:
     dbca, balance_table, n_cell = create_balanced_dbca(df)
     model, anova = fit_dbca_anova(dbca)
 
-    if model is None:
+    if dbca.empty or n_cell == 0:
+        st.error("No se pueden evaluar los supuestos porque no se logró construir una base DBCA balanceada.")
+        st.dataframe(balance_table, use_container_width=True)
+    elif model is None:
         st.error("No hay datos suficientes para evaluar supuestos.")
     else:
         fig_hist, fig_qq, fig_rv, fig_seq = residual_diagnostic_figs(model)
@@ -1954,7 +2047,7 @@ with tabs[6]:
         c1, c2 = st.columns(2)
 
         with c1:
-            st.plotly_chart(fig_hist, use_container_width=True)
+            show_plot(fig_hist, "supuestos_hist_residuos")
             interpretation_box(
                 "Interpretación",
                 """
@@ -1964,7 +2057,7 @@ with tabs[6]:
             )
 
         with c2:
-            st.plotly_chart(fig_qq, use_container_width=True)
+            show_plot(fig_qq, "supuestos_qq_residuos")
             interpretation_box(
                 "Interpretación",
                 """
@@ -1976,7 +2069,7 @@ with tabs[6]:
         c1, c2 = st.columns(2)
 
         with c1:
-            st.plotly_chart(fig_rv, use_container_width=True)
+            show_plot(fig_rv, "supuestos_residuos_ajustados")
             interpretation_box(
                 "Interpretación",
                 """
@@ -1986,7 +2079,7 @@ with tabs[6]:
             )
 
         with c2:
-            st.plotly_chart(fig_seq, use_container_width=True)
+            show_plot(fig_seq, "supuestos_residuos_secuencia")
             interpretation_box(
                 "Interpretación",
                 """
@@ -2066,7 +2159,10 @@ with tabs[7]:
 
     power_info = compute_power(anova, dbca)
 
-    if power_info is None:
+    if dbca.empty or n_cell == 0:
+        st.error("No se puede calcular la potencia porque no se logró construir una base DBCA balanceada.")
+        st.dataframe(balance_table, use_container_width=True)
+    elif power_info is None:
         st.error("No fue posible calcular la potencia.")
     else:
         c1, c2, c3, c4 = st.columns(4)
@@ -2152,32 +2248,42 @@ with tabs[8]:
             """
         )
 
-    fig = px.box(
-        dbca,
-        x="job_type",
-        y="actual_productivity_score",
-        color="social_media_level",
-        color_discrete_map=PAL_SML
-    )
+    if dbca.empty or n_cell == 0:
+        warn_box(
+            """
+            No se muestra la gráfica integradora porque no se logró construir una base DBCA balanceada.
+            Aun así, se conserva la estimación muestral y se reporta la limitación del análisis experimental.
+            """
+        )
+        if not balance_table.empty:
+            st.dataframe(balance_table, use_container_width=True)
+    else:
+        fig = px.box(
+            dbca,
+            x="job_type",
+            y="actual_productivity_score",
+            color="social_media_level",
+            color_discrete_map=PAL_SML
+        )
 
-    fig.update_xaxes(title="Tipo de trabajo")
-    fig.update_yaxes(title="Productividad real")
+        fig.update_xaxes(title="Tipo de trabajo")
+        fig.update_yaxes(title="Productividad real")
 
-    fig = plot_layout(
-        fig,
-        "Productividad real por tipo de trabajo y nivel de redes"
-    )
+        fig = plot_layout(
+            fig,
+            "Productividad real por tipo de trabajo y nivel de redes"
+        )
 
-    show_plot(fig, "integracion_boxplot")
+        show_plot(fig, "integracion_boxplot")
 
-    interpretation_box(
-        "Interpretación integradora",
-        """
-        Esta gráfica conecta ambas fases del proyecto. El tipo de trabajo se usó como estrato en el muestreo
-        y como bloque en el DBCA. Si el patrón entre niveles de redes se mantiene dentro de varios tipos de trabajo,
-        la conclusión descriptiva gana coherencia. Si cambia mucho entre bloques, debe discutirse el papel del contexto laboral.
-        """
-    )
+        interpretation_box(
+            "Interpretación integradora",
+            """
+            Esta gráfica conecta ambas fases del proyecto. El tipo de trabajo se usó como estrato en el muestreo
+            y como bloque en el DBCA. Si el patrón entre niveles de redes se mantiene dentro de varios tipos de trabajo,
+            la conclusión descriptiva gana coherencia. Si cambia mucho entre bloques, debe discutirse el papel del contexto laboral.
+            """
+        )
 
     st.subheader("Respuesta al problema de investigación")
 
