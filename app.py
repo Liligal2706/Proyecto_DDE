@@ -681,24 +681,75 @@ def auxiliary_estimators(df, sample):
 
 def create_balanced_dbca(df):
     needed = ["actual_productivity_score", "social_media_level", "job_type"]
+
+    missing_cols = [col for col in needed if col not in df.columns]
+    if missing_cols:
+        st.error(
+            "No se puede construir el DBCA porque faltan estas columnas: "
+            + ", ".join(missing_cols)
+        )
+        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
+
     base = df[needed].dropna().copy()
+
+    if base.empty:
+        st.error(
+            "No hay registros completos para construir el DBCA. "
+            "Se necesitan datos completos en productividad real, nivel de redes y tipo de trabajo."
+        )
+        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
     base["social_media_level"] = base["social_media_level"].astype(str)
     base["job_type"] = base["job_type"].astype(str)
 
-    cell_counts = base.groupby(["social_media_level", "job_type"]).size()
+    # Evita niveles vacíos o categorías no observadas
+    base = base[
+        base["social_media_level"].isin(["Bajo", "Medio", "Alto"])
+    ].copy()
+
+    if base.empty:
+        st.error(
+            "Después de filtrar los niveles Bajo, Medio y Alto, no quedaron datos para el DBCA."
+        )
+        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
+
+    cell_counts = (
+        base
+        .groupby(["social_media_level", "job_type"], observed=True)
+        .size()
+        .reset_index(name="n")
+    )
+
+    # Solo se usan celdas realmente observadas
+    cell_counts = cell_counts[cell_counts["n"] > 0].copy()
 
     if cell_counts.empty:
-        return pd.DataFrame(), pd.DataFrame(), 0
+        st.error(
+            "No hay combinaciones válidas entre nivel de redes y tipo de trabajo para construir el DBCA."
+        )
+        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
-    n_cell = int(cell_counts.min())
+    n_cell = int(cell_counts["n"].min())
+
+    if n_cell < 1:
+        st.error(
+            "El número mínimo de observaciones por celda es menor que 1. "
+            "No se puede construir una muestra balanceada para el DBCA."
+        )
+        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
     balanced = (
         base
-        .groupby(["social_media_level", "job_type"], group_keys=False)
+        .groupby(["social_media_level", "job_type"], observed=True, group_keys=False)
         .apply(lambda x: x.sample(n=n_cell, random_state=123))
         .reset_index(drop=True)
     )
+
+    if balanced.empty or "social_media_level" not in balanced.columns:
+        st.error(
+            "No se pudo construir correctamente la base balanceada del DBCA."
+        )
+        return pd.DataFrame(columns=needed), pd.DataFrame(), 0
 
     balance_table = pd.crosstab(
         balanced["social_media_level"],
