@@ -329,25 +329,29 @@ def pvalue_decision(p, alpha=0.05):
     return f"No se rechaza H₀ porque p = {format_p(p)} ≥ {alpha}."
 
 
-def plot_layout(fig, title=None):
+def plot_layout(fig, title=None, show_legend=True):
     fig.update_layout(
         template="plotly_dark",
         title=dict(
             text=title if title else fig.layout.title.text,
             font=dict(size=21, color="#FFFFFF"),
-            x=0.02
+            x=0.02,
+            y=0.96
         ),
         font=dict(color=COLORS["text"]),
         paper_bgcolor=COLORS["panel"],
         plot_bgcolor=COLORS["panel"],
-        margin=dict(l=35, r=35, t=75, b=70),
+        margin=dict(l=45, r=45, t=85, b=135),
+        height=560,
+        showlegend=show_legend,
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=-0.28,
+            yanchor="top",
+            y=-0.24,
             xanchor="center",
             x=0.5,
-            bgcolor="rgba(0,0,0,0)"
+            bgcolor="rgba(0,0,0,0)",
+            title=dict(text="")
         ),
         hoverlabel=dict(
             bgcolor="#111827",
@@ -359,12 +363,17 @@ def plot_layout(fig, title=None):
     fig.update_xaxes(
         gridcolor="#2D3748",
         zerolinecolor="#2D3748",
-        linecolor="#4B5563"
+        linecolor="#4B5563",
+        automargin=True,
+        title_standoff=35
     )
+
     fig.update_yaxes(
         gridcolor="#2D3748",
         zerolinecolor="#2D3748",
-        linecolor="#4B5563"
+        linecolor="#4B5563",
+        automargin=True,
+        title_standoff=25
     )
 
     return fig
@@ -1013,13 +1022,21 @@ def boxplot_fig(df, x, y, title, x_label, y_label):
         color=x,
         color_discrete_map=PAL_SML if x == "social_media_level" else None,
         color_discrete_sequence=PALETTE,
-        points="outliers"
+        points="outliers",
+        labels={
+            x: x_label,
+            y: y_label
+        }
     )
 
     fig.update_xaxes(title=x_label)
     fig.update_yaxes(title=y_label)
 
-    return plot_layout(fig, title)
+    # En estos boxplots el color repite la variable del eje X,
+    # por eso la leyenda es redundante y se oculta.
+    fig.update_layout(showlegend=False)
+
+    return plot_layout(fig, title, show_legend=False)
 
 
 def scatter_fig(df, x, y, title, x_label, y_label):
@@ -2263,15 +2280,44 @@ with tabs[8]:
             x="job_type",
             y="actual_productivity_score",
             color="social_media_level",
-            color_discrete_map=PAL_SML
+            color_discrete_map=PAL_SML,
+            labels={
+                "job_type": "Tipo de trabajo",
+                "actual_productivity_score": "Productividad real",
+                "social_media_level": "Nivel de redes"
+            }
         )
 
-        fig.update_xaxes(title="Tipo de trabajo")
-        fig.update_yaxes(title="Productividad real")
+        fig.update_xaxes(
+            title="Tipo de trabajo",
+            title_standoff=35,
+            automargin=True
+        )
+
+        fig.update_yaxes(
+            title="Productividad real",
+            title_standoff=25,
+            automargin=True
+        )
+
+        fig.update_layout(
+            legend_title_text="Nivel de redes",
+            margin=dict(l=45, r=45, t=85, b=150),
+            height=590,
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.25,
+                xanchor="center",
+                x=0.5,
+                bgcolor="rgba(0,0,0,0)"
+            )
+        )
 
         fig = plot_layout(
             fig,
-            "Productividad real por tipo de trabajo y nivel de redes"
+            "Productividad real por tipo de trabajo y nivel de redes",
+            show_legend=True
         )
 
         show_plot(fig, "integracion_boxplot")
