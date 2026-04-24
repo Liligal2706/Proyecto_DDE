@@ -760,25 +760,82 @@ def create_balanced_dbca(df):
 
 
 def fit_dbca_anova(dbca):
-    if dbca.empty:
-        return None, pd.DataFrame()
+    anova_cols = ["Fuente", "sum_sq", "df", "F", "PR(>F)"]
 
-    model = smf.ols(
-        "actual_productivity_score ~ C(social_media_level) + C(job_type)",
-        data=dbca
-    ).fit()
+    if dbca is None or dbca.empty:
+        return None, pd.DataFrame(columns=anova_cols)
 
-    anova = sm.stats.anova_lm(model, typ=2)
+    required = ["actual_productivity_score", "social_media_level", "job_type"]
+    missing = [col for col in required if col not in dbca.columns]
 
-    anova = anova.reset_index().rename(columns={"index": "Fuente"})
-    anova["Fuente"] = anova["Fuente"].replace({
-        "C(social_media_level)": "Tratamiento: nivel de redes",
-        "C(job_type)": "Bloque: tipo de trabajo",
-        "Residual": "Error"
-    })
+    if missing:
+        st.error(
+            "No se puede ajustar el ANOVA porque faltan estas columnas: "
+            + ", ".join(missing)
+        )
+        return None, pd.DataFrame(columns=anova_cols)
 
-    return model, anova
+    dbca_model = dbca[required].dropna().copy()
 
+    if dbca_model.empty:
+        return None, pd.DataFrame(columns=anova_cols)
+
+    if dbca_model["social_media_level"].nunique() < 2:
+        st.error(
+            "No se puede ajustar el ANOVA porque hay menos de dos niveles de tratamiento."
+        )
+        return None, pd.DataFrame(columns=anova_cols)
+
+    if dbca_model["job_type"].nunique() < 2:
+        st.error(
+            "No se puede ajustar el ANOVA porque hay menos de dos bloques."
+        )
+        return None, pd.DataFrame(columns=anova_cols)
+
+    try:
+        model = smf.ols(
+            "actual_productivity_score ~ C(social_media_level) + C(job_type)",
+            data=dbca_model
+        ).fit()
+
+        anova = sm.stats.anova_lm(model, typ=2)
+
+        anova = anova.reset_index().rename(columns={"index": "Fuente"})
+
+        anova["Fuente"] = anova["Fuente"].replace({
+            "C(social_media_level)": "Tratamiento: nivel de redes",
+            "C(job_type)": "Bloque: tipo de trabajo",
+            "Residual": "Error"
+        })
+
+        for col in anova_cols:
+            if col not in anova.columns:
+                anova[col] = np.nan
+
+        anova = anova[anova_cols]
+
+        return model, anova
+
+    except Exception as e:
+        st.error(
+            "No se pudo ajustar el modelo ANOVA. "
+            "Revisa que existan suficientes observaciones por tratamiento y bloque."
+        )
+        return None, pd.DataFrame(columns=anova_cols)
+
+def get_anova_pvalue(anova, fuente):
+    if anova is None or anova.empty:
+        return np.nan
+
+    if "Fuente" not in anova.columns or "PR(>F)" not in anova.columns:
+        return np.nan
+
+    value = anova.loc[anova["Fuente"] == fuente, "PR(>F)"]
+
+    if value.empty:
+        return np.nan
+
+    return float(value.iloc[0])
 
 def tukey_table(dbca):
     if dbca.empty:
@@ -1792,23 +1849,13 @@ with tabs[5]:
 
         st.dataframe(anova_display.round(5), use_container_width=True)
 
-        p_trat = anova.loc[
-            anova["Fuente"] == "Tratamiento: nivel de redes",
-            "PR(>F)"
-        ]
-
-        p_bloque = anova.loc[
-            anova["Fuente"] == "Bloque: tipo de trabajo",
-            "PR(>F)"
-        ]
-
-        p_trat = float(p_trat.iloc[0]) if not p_trat.empty else np.nan
-        p_bloque = float(p_bloque.iloc[0]) if not p_bloque.empty else np.nan
+        p_trat = get_anova_pvalue(anova, "Tratamiento: nivel de redes")
+        p_bloque = get_anova_pvalue(anova, "Bloque: tipo de trabajo")
 
         c1, c2 = st.columns(2)
 
         with c1:
-            if p_trat < ALPHA:
+            if pd.notna(p_trat) and p_trat < ALPHA:
                 good_box(
                     f"""
                     <b>Tratamiento significativo.</b><br>
@@ -1869,7 +1916,7 @@ with tabs[5]:
         tukey = tukey_table(dbca)
         st.dataframe(tukey, use_container_width=True)
 
-        if p_trat < ALPHA:
+        if pd.notna(p_trat) and p_trat < ALPHA:
             interpretation_box(
                 "Interpretación de Tukey",
                 """
@@ -2078,12 +2125,7 @@ with tabs[8]:
 
     ybar_strat, se_strat, ci_l_strat, ci_u_strat = stratified_mean_ci(sample, allocation)
 
-    p_trat = anova.loc[
-        anova["Fuente"] == "Tratamiento: nivel de redes",
-        "PR(>F)"
-    ]
-
-    p_trat = float(p_trat.iloc[0]) if not p_trat.empty else np.nan
+    p_trat = get_anova_pvalue(anova, "Tratamiento: nivel de redes")
 
     info_box(
         f"""
@@ -2093,7 +2135,7 @@ with tabs[8]:
         """
     )
 
-    if p_trat < ALPHA:
+    if pd.notna(p_trat) and p_trat < ALPHA:
         good_box(
             f"""
             <b>Resultado de la fase experimental:</b><br>
@@ -2105,7 +2147,7 @@ with tabs[8]:
         warn_box(
             f"""
             <b>Resultado de la fase experimental:</b><br>
-            El DBCA no encontró evidencia estadística suficiente de diferencias entre niveles de uso de redes,
+            El DBCA no encontró evidencia estadística suficiente de diferencias entre niveles de redes,
             con p = {format_p(p_trat)}.
             """
         )
