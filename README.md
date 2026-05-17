@@ -1,202 +1,170 @@
-# 📊 Dashboard: Redes sociales vs productividad
+# 📊 Redes Sociales & Productividad
 
-Análisis completo de la relación entre uso de redes sociales y productividad mediante Diseño de Experimentos, con integración a **Google Stitch** para sincronización de datos.
+**Proyecto Investigativo — Muestreo y Diseño de Experimentos**  
+Universidad Santo Tomás · Facultad de Estadística · 2026-I
 
-## 🎯 Características
-
-### Análisis Estadístico
-- ✅ Análisis exploratorio (EDA)
-- ✅ Muestreo bietápico con estimador Horvitz-Thompson
-- ✅ Calibración por raking (IPF)
-- ✅ Estimadores auxiliares (razón y regresión)
-- ✅ Diseño en Bloques Completos Aleatorizados (DBCA)
-- ✅ ANOVA y comparaciones múltiples (Tukey, Fisher LSD, Dunnett)
-- ✅ Diseño factorial 2²
-- ✅ Verificación de supuestos (normalidad, homocedasticidad, autocorrelación)
-- ✅ Análisis de potencia estadística
-
-### Integración de Datos
-- 🌐 **Google Stitch** — Sincronización automática de fuentes de datos
-- 📡 **MCP (Model Context Protocol)** — Conexión segura a servicios de Google
-- 🔐 **Variables de entorno** — Manejo seguro de credenciales
-- 📈 **Escalabilidad** — Soporte para grandes volúmenes de datos
-
-## 🚀 Instalación y Setup
-
-### 1. Clonar o descargar el proyecto
-```bash
-cd Proyecto_DDE
-```
-
-### 2. Crear e instalar dependencias
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configurar Google Stitch (opcional)
-
-#### Obtén tu API Key de Google Cloud
-
-1. Ve a [Google Cloud Console](https://console.cloud.google.com/)
-2. Crea o selecciona tu proyecto
-3. Habilita la API de Stitch
-4. Crea una clave de API (restricción de HTTP referrer opcional)
-
-#### Configura el archivo `.env`
-
-Crea un archivo `.env` en la raíz del proyecto:
-
-```env
-GOOGLE_STITCH_API_KEY=tu_api_key_aqui
-STITCH_MCP_URL=https://stitch.googleapis.com/mcp
-```
-
-⚠️ **IMPORTANTE:** El archivo `.env` está en `.gitignore` — NO se versionará.
-
-### 4. Ejecutar el dashboard
-```bash
-streamlit run app.py
-```
-
-Se abrirá automáticamente en `http://localhost:8501`
-
-## 📑 Estructura de Pestañas
-
-| Pestaña | Descripción |
-|---------|-------------|
-| 📋 **Resumen** | Resumen ejecutivo y metodología |
-| 🔍 **Datos & Faltantes** | Análisis de missingness y raking |
-| 📊 **Exploración** | EDA, distribuciones y correlaciones |
-| 🧮 **Muestreo bietápico** | Diseño muestral y estimadores HT |
-| 🧪 **DBCA** | Diseño en bloques y eficiencia |
-| 📈 **ANOVA & Comparaciones** | Pruebas y contrastes múltiples |
-| 🔢 **Diseño 2ᵏ** | Diseño factorial 2² |
-| ✅ **Supuestos** | Verificación de normalidad y homocedasticidad |
-| ⚡ **Potencia** | Análisis de potencia estadística |
-| 🌐 **Integración Stitch** | Estado y fuentes de datos Stitch |
-| 🔗 **Integración** | Síntesis de resultados |
-
-## 📊 Datos
-
-### Formato
-- **Localización:** `data/` directory
-- **Archivos:**
-  - `social_media_vs_productivity.csv` — Base principal (~30,000 registros)
-  - `datos_dbca_balanceado.csv` — Base para DBCA (opcional)
-
-### Columnas principales
-```
-age, gender, job_type
-daily_social_media_time, actual_productivity_score, perceived_productivity_score
-stress_level, sleep_hours, screen_time_before_sleep, work_hours_per_day
-number_of_notifications, uses_focus_apps, has_digital_wellbeing_enabled
-...
-```
-
-## 🔧 Configuración
-
-### `.streamlit/config.toml`
-Controla temas, puertos y opciones de Streamlit:
-```toml
-[theme]
-primaryColor = "#98C1D9"
-backgroundColor = "#0B1220"
-```
-
-### Constantes en `app.py`
-```python
-CSV_PATH = Path("data/social_media_vs_productivity.csv")
-ALPHA = 0.05                    # Nivel de significancia
-SEED = 123                      # Para reproducibilidad
-CLR = {...}                     # Paleta de colores
-```
-
-## 🌐 Integración Stitch
-
-### ¿Qué es Stitch?
-Google Stitch es una plataforma de integración que:
-- Sincroniza datos automáticamente desde múltiples fuentes
-- Realiza transformaciones ETL
-- Se conecta a data warehouses (BigQuery, Postgres, etc.)
-- Escala para volúmenes grandes
-
-### Cómo usar en este proyecto
-
-1. **Verifica el estado** → Pestaña "Integración Stitch"
-2. **Configura fuentes** en Stitch Console
-3. **Los datos se sincronizan** automáticamente
-4. **Analiza en el dashboard** con datos frescos
-
-### Módulo `stitch_integration.py`
-```python
-from stitch_integration import get_stitch_client, get_stitch_status
-
-# Verificar estado
-status = get_stitch_status()
-
-# Obtener cliente
-client = get_stitch_client()
-
-# Listar integraciones
-integrations = client.get_configured_integrations()
-```
-
-## 📝 Variables de Entorno
-
-| Variable | Descripción | Ejemplo |
-|----------|-------------|---------|
-| `GOOGLE_STITCH_API_KEY` | API Key de Google Stitch | `AQ.Ab8RN...` |
-| `STITCH_MCP_URL` | URL del MCP de Stitch | `https://stitch.googleapis.com/mcp` |
-
-## 🔐 Seguridad
-
-- ✅ Credenciales en `.env` (nunca en código)
-- ✅ `.env` en `.gitignore`
-- ✅ Variables de entorno con `python-dotenv`
-- ✅ Headers seguros en requests
-- ✅ Timeout de conexión configurable
-
-## 📚 Dependencias Principales
-
-- **streamlit** — Framework de UI
-- **pandas** — Manipulación de datos
-- **altair** — Visualizaciones
-- **scipy/statsmodels** — Análisis estadístico
-- **python-dotenv** — Variables de entorno
-- **google-cloud-stitch** — Integración Stitch
-- **requests** — HTTP client
-
-## 🎨 Tema Visual
-
-### Paleta de colores
-```python
-CLR = {
-    "bg": "#0B1220",              # Fondo oscuro
-    "panel": "#111827",           # Paneles
-    "text": "#E5E7EB",            # Texto principal
-    "blue": "#98C1D9",            # Azul principal
-    "teal": "#7FBFBF",            # Teal
-    "warn": "#F59E0B",            # Advertencia
-    "ok": "#10B981",              # Éxito
-    "err": "#EF4444",             # Error
-}
-```
-
-## 📖 Autores
-
-- Lina María Galvis Barragán
-- Julián Mateo Valderrama Tibaduiza
-- Docente: Javier Mauricio Sierra
-
-**Universidad:** Santo Tomás  
-**Curso:** Diseño de Experimentos  
-**Período:** 2026-I
-
-## 📄 Licencia
-
-Este proyecto es educativo. Úsalo libremente respetando la autoría.
+| | |
+|---|---|
+| **Autores** | Lina María Galvis Barragán · Julián Mateo Valderrama Tibaduiza |
+| **Docente** | Javier Mauricio Sierra |
+| **Asignatura** | Diseño de Experimentos · VI Semestre |
+| **Entregable** | Dashboard interactivo (Streamlit) |
 
 ---
 
-**Última actualización:** May 2026  
-**Versión:** 3.0 (Con integración Stitch)
+## 🎯 Pregunta de investigación
+
+> ¿El nivel de uso diario de redes sociales se asocia con diferencias significativas en la productividad real, controlando por tipo de trabajo?
+
+**Hallazgo principal:** No se evidencia efecto práctico. Medias de productividad real por nivel de redes: 4.950 (Bajo), 4.966 (Medio), 4.929 (Alto) — diferencia máxima de 0.037 pts en escala 0–10. ANOVA: p ≈ 0.39, η² ≈ 0.
+
+---
+
+## 📁 Estructura del proyecto
+
+```
+proyecto/
+├── app.py                  # Dashboard principal (Streamlit)
+├── requirements.txt        # Dependencias
+├── README.md
+└── data/
+    └── social_media_vs_productivity.csv
+```
+
+---
+
+## 🚀 Instalación y ejecución
+
+```bash
+# 1. Clonar o descomprimir el proyecto
+cd proyecto/
+
+# 2. Instalar dependencias
+pip install -r requirements.txt
+
+# 3. Ejecutar
+streamlit run app.py
+```
+
+El dashboard quedará disponible en `http://localhost:8501`.
+
+---
+
+## 📦 Dependencias
+
+```
+streamlit>=1.35.0
+pandas>=2.0.0
+numpy>=1.26.0
+altair>=5.3.0
+scipy>=1.13.0
+statsmodels>=0.14.2
+```
+
+---
+
+## 📐 Fases del proyecto (rúbrica)
+
+El dashboard está organizado en 7 fases que corresponden a los criterios de evaluación:
+
+| Tab | Fase | Contenido | Peso |
+|-----|------|-----------|------|
+| ① | **Fase 1 · Muestreo Básico** | Estratificado proporcional, bietápico HT, estimadores de razón y regresión | 10% |
+| ② | **Fase 2 · DOE Básico** | DBCA, ANOVA Tipo II, Tukey / Fisher LSD / Dunnett, supuestos, potencia | 7% |
+| ③ | **Fase 3 · Factorial** | 2² con bloqueo, efectos principales, interacción, pareto de efectos | 12% |
+| ④ | **Fase 4 · Diseños 2ᵏ** | Contrastes, SS, gráfica de probabilidad normal de efectos, D-optimalidad | 12% |
+| ⑤ | **Fase 5 · Bloqueo** | 2³ con confusión ABC, esquema generador, ANOVA con bloque, comparación con/sin | 10% |
+| ⑥ | **Fase 6 · P. Desiguales** | PPS, estimador Horvitz-Thompson, comparación MAS vs HT-PPS | 10% |
+| ⑦ | **Fase 7 · Encuestas** | Diseño complejo ensamblado, raking IPF, deff, cuantiles ponderados | 10% |
+| 📋 | **Conclusiones** | Síntesis, pruebas excluidas con justificación, declaración de uso de IA | — |
+
+---
+
+## 📊 Dataset
+
+- **Fuente:** `social_media_vs_productivity.csv`
+- **Observaciones:** 30 000
+- **Variables:** 19 (demográficas, conductuales y de productividad)
+- **Variable respuesta:** `actual_productivity_score` (escala 0–10)
+- **Faltantes:** ~8% en variables clave — mecanismo MCAR verificado
+
+### Variables principales
+
+| Variable | Tipo | Descripción |
+|----------|------|-------------|
+| `daily_social_media_time` | Numérica | Horas diarias en redes sociales |
+| `actual_productivity_score` | Numérica | Productividad real autoreportada (0–10) |
+| `perceived_productivity_score` | Numérica | Productividad percibida (0–10) |
+| `job_type` | Categórica | Tipo de trabajo (6 niveles) — usado como bloque |
+| `uses_focus_apps` | Binaria | Uso de apps de enfoque (Sí/No) |
+| `has_digital_wellbeing_enabled` | Binaria | Bienestar digital activado (Sí/No) |
+| `nivel_redes` | Ordinal | Nivel de uso de redes: Bajo / Medio / Alto (derivada) |
+
+---
+
+## 🔬 Métodos estadísticos implementados
+
+### Manejo de datos faltantes
+- Verificación MCAR mediante χ² entre pares de indicadores de missingness
+- Calibración por **Raking IPF** (Iterative Proportional Fitting) sobre género × job_type
+
+### Diseño muestral (Fases 1, 6, 7)
+- Muestreo estratificado proporcional con afijación por job_type
+- Muestreo bietápico con estimador **Horvitz-Thompson** (π⁻¹)
+- Estimadores auxiliares de razón y regresión (auxiliar: productividad percibida, r ≈ 0.96)
+- Muestreo PPS (Probability Proportional to Size)
+- Efecto de diseño (deff) y cuantiles ponderados
+
+### Diseño experimental (Fases 2–5)
+- **DBCA** (Diseño en Bloques Completos Aleatorizados): tratamiento = nivel de redes, bloque = job_type
+- **ANOVA Tipo II** con verificación de supuestos
+- Comparaciones múltiples: **Tukey HSD**, **Fisher LSD**, **Dunnett** (vs control)
+- Eficiencia relativa del bloqueo (RE)
+- Análisis de **potencia** y tamaño de muestra (curvas de potencia)
+- **Diseño factorial 2²**: A = nivel redes, B = focus apps
+- **Diseño 2³ con confusión ABC** en 2 bloques (contraste generador L = ABC)
+
+### Pruebas de supuestos
+- Normalidad: **Anderson-Darling** + Q-Q plot (Shapiro-Wilk excluido por límite n ≤ 5 000)
+- Homocedasticidad: **Levene** (centro = mediana)
+- Independencia: **Durbin-Watson**
+
+---
+
+## ⚠️ Pruebas excluidas y justificación
+
+| Prueba | Razón de exclusión | Alternativa |
+|--------|-------------------|-------------|
+| Shapiro-Wilk | Límite n ≤ 5 000; n grande detecta trivialidades | Anderson-Darling + Q-Q + TCL |
+| Prueba de Little | Requiere `pyampute` / normalidad multivariada | χ² entre indicadores de missingness |
+| Esfericidad de Mauchly | Solo aplica a medidas repetidas | Levene + Durbin-Watson |
+| Cuadrado Latino | Requiere 2 bloques ortogonales; solo tenemos job_type | DBCA + 2³ confusión |
+| BIBD | Bloques completos disponibles → DBCA preferible | DBCA balanceado |
+| MICE | Sin sesgo bajo MCAR; ganancia marginal con n = 30 000 | Raking IPF |
+| Welch ANOVA | Levene no rechaza homocedasticidad | ANOVA clásico Tipo II |
+
+---
+
+## 🤖 Declaración de uso de IA
+
+Se utilizó **Claude (Anthropic)** como apoyo en: depuración de código Python/Streamlit, implementación de funciones estadísticas (raking IPF, estimador HT, Anderson-Darling, confusión 2³) y redacción de interpretaciones.
+
+Errores identificados y corregidos por los investigadores:
+- La IA propuso Shapiro-Wilk para n grande → corregido a Anderson-Darling
+- Variable global `C` colisionaba con `C()` de patsy → eliminado `C()` de fórmulas OLS
+- Confusión entre estimadores Hansen-Hurwitz y Horvitz-Thompson → corregido
+
+Todos los resultados fueron verificados contra la literatura de referencia. El criterio estadístico y la interpretación final son de los investigadores.
+
+---
+
+## 📚 Referencias
+
+- Montgomery, D. C. (2017). *Design and Analysis of Experiments* (9th ed.). Wiley. — Caps. 5, 6, 7.
+- Lohr, S. L. (2022). *Sampling: Design and Analysis* (3rd ed.). CRC Press. — Caps. 6, 7.
+- Box, G. E. P., Hunter, J. S. & Hunter, W. G. (2005). *Statistics for Experimenters* (2nd ed.). Wiley.
+- Lumley, T. (2011). *Complex Surveys: A Guide to Analysis Using R*. Wiley.
+
+---
+
+*Diseño de Experimentos · Universidad Santo Tomás · 2026-I*
